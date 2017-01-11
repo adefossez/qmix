@@ -10,25 +10,33 @@
 #include <opencv2/imgproc.hpp>
 #include <zbar.h>
 
-std::vector<QRSong> find_songs(Frame frame) {
-    std::vector<QRSong> results;
-    // zbar::ImageScanner scanner;
-    // scanner.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_ENABLE, 1);
+void find_songs(Frame frame, int channel, std::vector<QRSong>* songs) {
+    cv::Mat blurred, thresh;
+    //cv::GaussianBlur(*frame.gFrame, blurred, cv::Size(15, 15), 0);
+    cv::GaussianBlur(*frame.gFrame, blurred, cv::Size(15, 15), 0);
+    cv::threshold(blurred, thresh, 90, 255, cv::THRESH_BINARY);
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(thresh, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
 
-    // int width = frame.frame->cols;
-    // int height = frame.frame->rows;
-    // uint8_t *raw = (uchar *)(frame.frame->data);
-    // zbar::Image image(width, height, "Y800", raw, width * height);
-    // scanner.scan(image);
+    cv::Mat drawing = cv::Mat::zeros(thresh.size(), CV_8UC1);
+    for(size_t i = 0; i< contours.size(); i++) {
+        double peri = cv::arcLength(contours[i], true);
+        std::vector<cv::Point> approx;
+        cv::approxPolyDP(contours[i], approx, 0.04 * peri, true);
+        if (approx.size() == 3 || approx.size() == 4) {
+            QRSong song;
+            song.id = approx.size() - 3 + 2 * channel;
+            songs->push_back(song);
+            cv::Scalar color(255);
+            std::vector<std::vector<cv::Point>> tmp_contours;
+            tmp_contours.push_back(approx);
+            cv::drawContours(drawing, tmp_contours, 0, color, 2);
+        }
+    }
 
-    // for(auto symbol = image.symbol_begin(); symbol != image.symbol_end(); ++symbol) {
-    //     QRSong song;
-    //     song.id = std::stoi(symbol->get_data());
-    //     std::cout << "found track " << song.id << std::endl;
-    //     results.push_back(std::move(song));
-    // }
-
-    return results;
+    cv::imshow("tmp", thresh);
+    cv::imshow("tmp2", drawing);
+    cv::waitKey(1000);
 }
 
 int main(int argc, char** argv) {
@@ -42,20 +50,30 @@ int main(int argc, char** argv) {
     std::cout << height << std::endl;
 
     cv::namedWindow("tmp");
+    cv::namedWindow("tmp2");
 
     auto begin = std::chrono::steady_clock::now();
     for(;;) {
-        cv::Mat color_frame;
         Frame frame;
-        capture >> color_frame;
-        cv::cvtColor(color_frame, *frame.frame, CV_BGR2GRAY);
-        cv::imshow("tmp", *frame.frame);
-        cv::waitKey(0);
+        cv::Mat gTmp, cTmp;
+        capture >> cTmp;
+        cv::cvtColor(cTmp, gTmp, CV_BGR2GRAY);
+        for (int i=0; i < frame.cFrames.size(); ++i) {
+            cv::Mat tmp;
+            cv::extractChannel(cTmp, tmp, i);
+            //*frame.cFrames[i] = std::move(tmp);
+            cv::equalizeHist(tmp, *frame.cFrames[i]);
+        }
+        cv::equalizeHist(gTmp, *frame.gFrame);
+        //*frame.gFrame = std::move(gTmp);
+        // cv::imshow("tmp", *frame.gFrame);
+        // cv::waitKey(1);
         auto duration = std::chrono::steady_clock::now() - begin;
         frame.msec = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
-        auto r = find_songs(std::move(frame));
-        std::cout << r.size() << std::endl;
+        std::vector<QRSong> songs;
+        find_songs(frame, 0, &songs);
+        // std::cout << songs.size() << std::endl;
     }
     return 0;
 }
