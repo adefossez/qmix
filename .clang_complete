@@ -1,2 +1,3 @@
 -I/usr/local/include
 -I/usr/local/opt/opencv3/include
+-Isoundfile-2.2/include

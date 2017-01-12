@@ -8,7 +8,12 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include <zbar.h>
+
+#include <portaudio.h>
+
+#include <SoundFileRead.h>
+
+#include "utils.hpp"
 
 enum class Shape {
     TRIANGLE, 
@@ -117,7 +122,29 @@ void find_songs(Frame frame, std::vector<QRSong>* songs) {
     cv::waitKey(1);
 }
 
+void play_cb(const void *input, void* output, unsigned long frameCount, 
+             const PaStreamCallbackTimeInfo* timeInfo,
+             PaStreamCallbackFlags statusFlags,
+             void *userData) {
+    auto file = reinterpret_cast<SoundFileRead*>(userData);
+}
+
+void play_song(int id) {
+    std::string path = "songs/" + std::to_string(id) + ".wav";
+    SoundFileRead* file = new SoundFileRead(path.c_str());
+    dbg("Reading file", id, "num channels", file->getChannels());
+
+    PaStream* stream;
+    call_pa(
+        Pa_OpenDefaultStream, &stream, 0, 2, 
+        paInt16, 44100, 256, play_cb, static_cast<void*>(file));
+}
+
 int main(int argc, char** argv) {
+    call_pa(Pa_Initialize);
+    play_song(0);
+    return 0;
+
     cv::VideoCapture capture(0);
     double fps = capture.get(cv::CAP_PROP_FPS);
     double width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
