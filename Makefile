@@ -9,12 +9,12 @@ else
 endif
 CC=clang
 CXX=clang++
-CXXFLAGS= $(CFLAGS) -Wall -std=c++11 -I/usr/local/opt/opencv3/include -I/usr/local/include
+CXXFLAGS= $(CFLAGS) -Wall -std=c++11 -I/usr/local/opt/opencv3/include -I/usr/local/include -Isoundfile-2.2/include
 LDFLAGS= -L/usr/local/lib -L/usr/local/opt/opencv3/lib
 LDLIBS= -lopencv_videoio -lopencv_highgui -lopencv_core -lopencv_imgproc -lzbar
 
 qmix: qmix.o
-	$(CXX) $(LDFLAGS) $(LDLIBS) -o $@ $<
+	$(CXX) $(LDFLAGS) $(LDLIBS) -o $@ $< soundfile-2.2/lib/libsoundfile.a
 
 
 qmix.o: qmix.cpp qmix.hpp
