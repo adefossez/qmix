@@ -1,5 +1,5 @@
 os:=$(shell uname | tr '[:upper:]' '[:lower:]')
-DEBUG=true
+DEBUG=false
 CFLAGS=-march=native
 
 ifeq ($(DEBUG),true)

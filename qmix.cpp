@@ -131,18 +131,18 @@ void find_songs(Frame frame, std::vector<QRSong>* songs) {
             song.center.y = static_cast<double>(info.center.y) / frame.gFrame->rows;
             song.size = info.size / (frame.gFrame->cols * frame.gFrame->rows);
             song.active = true;
-            std::cout << result << " "
-                      << song.center.x << " "
-                      << song.center.y << " "
-                      << song.size
-                      << frame.msec << std::endl;
+            // std::cout << result << " "
+            //           << song.center.x << " "
+            //           << song.center.y << " "
+            //           << song.size
+            //           << frame.msec << std::endl;
             (*songs)[result] = song;
         }
     }
 
-    cv::imshow("tmp2", thresh);
-    cv::imshow("tmp", drawing);
-    cv::waitKey(1);
+    //cv::imshow("tmp2", thresh);
+    //cv::imshow("tmp", drawing);
+    //cv::waitKey(1);
 }
 
 int main(int argc, char** argv) {
@@ -157,17 +157,18 @@ int main(int argc, char** argv) {
     std::cout << width << std::endl;
     std::cout << height << std::endl;
 
-    cv::namedWindow("tmp");
-    cv::namedWindow("tmp2");
+    //cv::namedWindow("tmp");
+    //cv::namedWindow("tmp2");
 
     auto begin = std::chrono::steady_clock::now();
     for(;;) {
         Frame frame;
-        cv::Mat gTmp, cTmp;
+        cv::Mat gTmp, cTmp, tmp;
         capture >> cTmp;
         cv::cvtColor(cTmp, gTmp, CV_BGR2GRAY);
-        cv::equalizeHist(gTmp, *frame.gFrame);
-        //*frame.gFrame = std::move(gTmp);
+        cv::flip(gTmp, tmp, 1);
+        //cv::equalizeHist(tmp, *frame.gFrame);
+        *frame.gFrame = std::move(tmp);
         //cv::imshow("tmp", *frame.gFrame);
         //cv::waitKey(1);
         auto duration = std::chrono::steady_clock::now() - begin;

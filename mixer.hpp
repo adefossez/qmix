@@ -2,6 +2,7 @@
 #define _MIXER_HPP_
 
 #include <atomic>
+#include <random>
 #include <thread>
 #include <vector>
 
@@ -17,16 +18,15 @@ class Seeker {
 public:
     Seeker(const std::string& path);
     void get_samples(
-        uint64_t time, 
-        double target,
+        double speed,
         std::vector<float>& buffer,
         size_t n_samples);
-    const SndfileHandle& file();
+    void noplay(size_t n_samples);
+    const SndfileHandle& file() const;
     void reset();
 private:
     SndfileHandle file_;
     std::vector<std::vector<float>> song_;
-    double current_ {0};
     int channels_;
     int sample_rate_;
     size_t num_samples_;
@@ -34,10 +34,12 @@ private:
     double read_speed_;
     double frame_duration_;
 
-    bool first_ {true};
-    size_t position_{0};
+    double position_{0};
+
+    std::default_random_engine generator_;
 
     static const double MAX_SPEED;
+    static const double SPEED_PROBA;
     static const double SPEED_THRESHOLD;
 };
 

@@ -15,23 +15,56 @@ const int Mixer::NUM_SONGS = 7;
 
 const double Seeker::MAX_SPEED = 2;
 const double Seeker::SPEED_THRESHOLD = 20;
+const double Seeker::SPEED_PROBA = 0.01;
 
 const double MAX_SIZE = 0.0005;
 const double MIN_SIZE = 0.000138;
+const double MAX_SPEED = 2;
+const double KERNEL_WINDOW = 10;
 
 double volume_for_size(double size) {
     size = std::max(std::min(size, MAX_SIZE), MIN_SIZE);
     return (size - MIN_SIZE) / (MAX_SIZE - MIN_SIZE);
 }
 
+double get_speed(double speed_pos) {
+    double high = 3. / 4;
+    double low = 1. / 4;
+    double middle = 1. / 2;
+    if (speed_pos > high) {
+        return 1 + (MAX_SPEED - 1) * (speed_pos - high) / (1 - high);
+    } else if (speed_pos > middle) {
+        return 1;
+    } else if (speed_pos > low) {
+        return (speed_pos - low) / (middle - low);
+    } else {
+        return - MAX_SPEED * (low - speed_pos) / low;
+    }
+}
+
+inline double sinc(double x) {
+    if (x == 0) {
+        return 1;
+    } else {
+        return std::sin(M_PI * x) / M_PI * x;
+    }
+}
+
+inline double lanczos(double x, double w) {
+    return sinc(x) * sinc(x / w);
+}
+
 float inline interpolate(std::vector<float>& samples, double location) {
-    size_t a, b;
-    assert(location >= 0 && location < 1);
-    size_t size = samples.size();
-    a = std::floor(location * size);
-    b = a == size - 1 ? 0 : a + 1;
-    double w = location - static_cast<double>(a) / size;
-    return samples[a];// * (1 - w) + samples[b] * w;
+    size_t a, size;
+    size = samples.size();
+    a = std::floor(location);
+    double result = 0;
+    for(int i=-KERNEL_WINDOW + 1; i <= a; ++i) {
+        size_t idx = positive_modulo(a + i, size);
+        result += samples[idx] * lanczos(i, KERNEL_WINDOW);
+    }
+    //return samples[a];// * (1 - w) + samples[b] * w;
+    return result;
 }
 
 Seeker::Seeker(const std::string& path) : file_(path.c_str()) {
@@ -64,56 +97,38 @@ Seeker::Seeker(const std::string& path) : file_(path.c_str()) {
 
 void Seeker::reset() {
     position_ = 0;
-    first_ = true;
 }
 
 void Seeker::get_samples(
-        uint64_t time,
-        double target,
+        double speed,
         std::vector<float>& buffer,
         size_t n_samples) {
 
     assert(buffer.size() == n_samples * channels_);
 
-    target = positive_modulof(target, 1);
-    if (first_) {
-        first_ = false;
-        current_ = target;
-    }
-    double delta = target - current_;
-    if (std::abs(delta) > 0.5) {
-        delta -= 1;
-    }
-    double delay = frame_duration_ * n_samples;
-    double speed = delta / delay;
-
-    if (true || std::abs(speed) < SPEED_THRESHOLD) {
-        speed = 0;
-    } else {
-        auto sign = speed / std::abs(speed);
-        speed = std::min(std::abs(speed), MAX_SPEED) * sign;
-    }
-
-
+    std::uniform_real_distribution<double> distro;
 
     auto it = buffer.begin();
-    double position = current_ + static_cast<double>(time) / sample_rate_ / duration_;
+
     for (size_t index=0; index < n_samples; ++index) {
-        position = positive_modulof(position, 1);
         for (int channel=0; channel < channels_; ++channel) {
-            //*it = song_[position_ * channels_ + channel];
-            *it = interpolate(song_[channel], position);
-            //*it = std::sin(440 * position * 2 * M_PI * duration_);
+            //*it = song_[channel][position_];
+            //*it = interpolate(song_[channel], position_);
+            *it = song_[channel][std::floor(position_)];
+            //*it = std::sin(440 * position_ * 2 * M_PI);
             it++;
         }
-        position += frame_duration_ * (speed + read_speed_);
-        current_ += speed * frame_duration_;
-        current_ = positive_modulof(current_, 1);
-        ++position_;
-        position_ = positive_modulo(position_, num_samples_);
+        position_ += speed;
+        position_ = positive_modulof(position_, num_samples_);
     }
-    if (speed != 0)
-        dbg("speed", delta / delay, speed, read_speed_, current_, target, position);
+}
+
+void Seeker::noplay(size_t n_samples) {
+    //position_ += n_samples;
+}
+
+const SndfileHandle& Seeker::file() const {
+    return file_;
 }
 
 Mixer::Mixer() 
@@ -144,7 +159,7 @@ Mixer::~Mixer() {
 void Mixer::do_mixer_thread() {
     call_pa(Pa_StartStream, stream_);
     std::vector<QRSong> state(7);
-    uint64_t index = 0;
+
     std::vector<float> tmp_buffer;
     tmp_buffer.resize(FBP * CHANNELS);
     dbg("Mixer thread starting");
@@ -156,11 +171,15 @@ void Mixer::do_mixer_thread() {
         std::fill(buffer.begin(), buffer.end(), 0);
         for (int i=0; i < NUM_SONGS; ++i) {
             if (!state[i].active) {
-                files_[i].reset();
+                //files_[i].reset();
+                files_[i].noplay(FBP);
                 continue;
             }
-            double base_position = 2 * (state[i].center.x - 0.5);
-            files_[i].get_samples(index, base_position, tmp_buffer, FBP);
+
+            double speed_pos = state[i].center.x;
+            double speed = get_speed(speed_pos);
+            
+            files_[i].get_samples(speed, tmp_buffer, FBP);
             double volume = volume_for_size(state[i].size);
             for (int s=0; s < FBP; ++s) {
                 for (int c=0; c < CHANNELS; ++c) {
@@ -169,7 +188,6 @@ void Mixer::do_mixer_thread() {
                 }
             }
         }
-        index += FBP;
         while(to_cb_.isFull());
         to_cb_.write(std::move(buffer));
     }
