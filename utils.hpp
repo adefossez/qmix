@@ -6,6 +6,16 @@
 
 #include <portaudio.h>
 
+template <typename T, typename U = T> 
+typename std::common_type<T, U>::type positive_modulo(const T& dividend, 
+                                                      const U& divisor) {  
+  return ((dividend % divisor) + divisor) % divisor;  
+}
+
+inline double positive_modulof(double a, double b) {
+  return std::fmod(std::fmod(a, b) + b, b);
+}
+
 template <typename O>
 void _dbg(O& out) {
   out << std::endl;
@@ -42,7 +52,9 @@ template<typename F, typename... Args>
 void call_pa(F f, Args&&... args) {
     PaError error = f(std::forward<Args>(args)...);
     if (error != paNoError) {
-        throw std::runtime_error("PaError " + std::to_string(error));
+        const char* text = Pa_GetErrorText(error);
+        throw std::runtime_error(
+          "PaError " + std::to_string(error) + " " + text);
     }
 }
 

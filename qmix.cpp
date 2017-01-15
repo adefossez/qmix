@@ -11,8 +11,7 @@
 
 #include <portaudio.h>
 
-#include <SoundFileRead.h>
-
+#include "mixer.hpp"
 #include "utils.hpp"
 
 enum class Shape {
@@ -25,28 +24,29 @@ struct ShapeInfo {
     Shape shape;
     cv::Point center;
     double size {0};
+    std::vector<cv::Point> approx;
+    double peri;
 
     ShapeInfo() : shape(Shape::OTHER), center(0, 0) {}
 };
 
 ShapeInfo get_shape(const std::vector<cv::Point>& contour) {
-    double peri = cv::arcLength(contour, true);
-    std::vector<cv::Point> approx;
-    cv::approxPolyDP(contour, approx, 0.1 * peri, true);
     ShapeInfo result;
-    if (approx.size() == 3 || approx.size() == 4) {
-        for (const auto& i : approx) {
+    result.peri = cv::arcLength(contour, true);
+    cv::approxPolyDP(contour, result.approx, 0.04 * result.peri, true);
+    if (result.approx.size() == 3 || result.approx.size() == 4) {
+        for (const auto& i : result.approx) {
             result.center.x += i.x;
             result.center.y += i.y;
         }
-        result.center.x /= approx.size();
-        result.center.y /= approx.size();
-        result.size = cv::contourArea(contour);
-        if (approx.size() == 3) {
-            result.size *= std::sqrt(3);
+        result.center.x /= result.approx.size();
+        result.center.y /= result.approx.size();
+        if (result.approx.size() == 3) {
+            result.size = result.peri / 3 * std::sqrt(3) / 2;
             result.shape = Shape::TRIANGLE;
         } else {
             result.shape = Shape::SQUARE;
+            result.size = result.peri / 4;
         }
     }
     return result;
@@ -62,8 +62,15 @@ int try_decode(const std::vector<std::vector<cv::Point>>& contours, const std::v
         if (level < 2) {
             sub_result = -1;
             auto child = hier[i][2];
+            // if (hier[child][0] != -1 || hier[child][1] != -1) {
+            //     return -1;
+            // }
             while (sub_result < 0 && child >= 0) {
                 sub_result = try_decode(contours, hier, child, nullptr, level + 1);
+                int sub_result_toplevel = try_decode(contours, hier, child, nullptr, 0);
+                if (sub_result_toplevel != -1) {
+                    return -1;
+                }
                 child = hier[child][1];
             }
             if (sub_result < 0) {
@@ -92,28 +99,44 @@ void find_songs(Frame frame, std::vector<QRSong>* songs) {
 
     cv::Mat drawing = cv::Mat::zeros(thresh.size(), CV_8UC1);
     for(size_t i = 0; i< contours.size(); i++) {
-        double peri = cv::arcLength(contours[i], true);
-        std::vector<cv::Point> approx;
-        cv::approxPolyDP(contours[i], approx, 0.1 * peri, true);
-        if (approx.size() == 3 || approx.size() == 4) {
-            cv::Scalar color(255);
-            std::vector<std::vector<cv::Point>> tmp_contours;
-            tmp_contours.push_back(approx);
-            cv::drawContours(drawing, tmp_contours, 0, color, 2);
-        }
+        // double peri = cv::arcLength(contours[i], true);
+        // std::vector<cv::Point> approx;
+        // cv::approxPolyDP(contours[i], approx, 0.1 * peri, true);
+        // if (approx.size() == 3 || approx.size() == 4) {
+        //     cv::Scalar color(255);
+        //     std::vector<std::vector<cv::Point>> tmp_contours;
+        //     tmp_contours.push_back(approx);
+        //     cv::drawContours(drawing, tmp_contours, 0, color, 2);
+        // }
         ShapeInfo info;
         auto result = try_decode(contours, hier, i, &info);
         if (result >= 0) {
+            if (result >= songs->size()) {
+                dbg("Invalid id", result);
+            }
+            cv::Scalar color(255);
+            cv::Scalar color_approx(128);
+            std::vector<std::vector<cv::Point>> tmp_contours;
+            std::vector<std::vector<cv::Point>> tmp_contours_approx;
+            tmp_contours.push_back(info.approx);
+            int idx = i;
+            while(idx >= 0) {
+                tmp_contours.push_back(contours[idx]);
+                idx = hier[idx][2];
+            }
+            cv::drawContours(drawing, tmp_contours, 0, color, 2);
+            cv::drawContours(drawing, tmp_contours_approx, 0, color_approx, 2);
             QRSong song;
-            song.id = result;
             song.center.x = static_cast<double>(info.center.x) / frame.gFrame->cols;
             song.center.y = static_cast<double>(info.center.y) / frame.gFrame->rows;
             song.size = info.size / (frame.gFrame->cols * frame.gFrame->rows);
-            std::cout << song.id << " "
+            song.active = true;
+            std::cout << result << " "
                       << song.center.x << " "
                       << song.center.y << " "
                       << song.size
                       << frame.msec << std::endl;
+            (*songs)[result] = song;
         }
     }
 
@@ -122,29 +145,9 @@ void find_songs(Frame frame, std::vector<QRSong>* songs) {
     cv::waitKey(1);
 }
 
-void play_cb(const void *input, void* output, unsigned long frameCount, 
-             const PaStreamCallbackTimeInfo* timeInfo,
-             PaStreamCallbackFlags statusFlags,
-             void *userData) {
-    auto file = reinterpret_cast<SoundFileRead*>(userData);
-}
-
-void play_song(int id) {
-    std::string path = "songs/" + std::to_string(id) + ".wav";
-    SoundFileRead* file = new SoundFileRead(path.c_str());
-    dbg("Reading file", id, "num channels", file->getChannels());
-
-    PaStream* stream;
-    call_pa(
-        Pa_OpenDefaultStream, &stream, 0, 2, 
-        paInt16, 44100, 256, play_cb, static_cast<void*>(file));
-}
-
 int main(int argc, char** argv) {
     call_pa(Pa_Initialize);
-    play_song(0);
-    return 0;
-
+    Mixer mixer;
     cv::VideoCapture capture(0);
     double fps = capture.get(cv::CAP_PROP_FPS);
     double width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
@@ -170,8 +173,9 @@ int main(int argc, char** argv) {
         auto duration = std::chrono::steady_clock::now() - begin;
         frame.msec = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
-        std::vector<QRSong> songs;
+        std::vector<QRSong> songs(7);
         find_songs(frame, &songs);
+        mixer.push_camera_state(std::move(songs));
         // std::cout << songs.size() << std::endl;
     }
     return 0;

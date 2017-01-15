@@ -16,11 +16,11 @@ struct Frame {
 
 
 struct QRSong {
-    int id;
-    double delay;
-    double volume;
-    cv::Point2d center;
-    double size;
+    double delay {0};
+    double volume {0};
+    cv::Point2d center {0,0};
+    double size {0};
+    bool active {false};
 };
 
 #endif
