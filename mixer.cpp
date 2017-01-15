@@ -19,7 +19,7 @@ const double Seeker::SPEED_PROBA = 0.01;
 
 const double MAX_SIZE = 0.0005;
 const double MIN_SIZE = 0.000138;
-const double MAX_SPEED = 2;
+const double MAX_SPEED = 3;
 const double KERNEL_WINDOW = 10;
 
 double volume_for_size(double size) {
@@ -28,9 +28,9 @@ double volume_for_size(double size) {
 }
 
 double get_speed(double speed_pos) {
-    double high = 3. / 4;
-    double low = 1. / 4;
-    double middle = 1. / 2;
+    double high = 0.75;
+    double low = 0.25;
+    double middle = 0.40;
     if (speed_pos > high) {
         return 1 + (MAX_SPEED - 1) * (speed_pos - high) / (1 - high);
     } else if (speed_pos > middle) {

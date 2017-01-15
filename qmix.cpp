@@ -88,96 +88,78 @@ int try_decode(const std::vector<std::vector<cv::Point>>& contours, const std::v
     return result;
 }
 
-void find_songs(Frame frame, std::vector<QRSong>* songs) {
-    cv::Mat blurred, thresh;
-    cv::GaussianBlur(*frame.gFrame, blurred, cv::Size(15, 15), 0);
-    cv::threshold(blurred, thresh, 70, 255, cv::THRESH_BINARY);
-
+void find_songs(const cv::Mat& image, std::vector<QRSong>* songs) {
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hier;
-    cv::findContours(thresh, contours, hier, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
+    cv::findContours(image, contours, hier, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
 
-    cv::Mat drawing = cv::Mat::zeros(thresh.size(), CV_8UC1);
+    // cv::Mat drawing = cv::Mat::zeros(image.size(), CV_8UC1);
     for(size_t i = 0; i< contours.size(); i++) {
-        // double peri = cv::arcLength(contours[i], true);
-        // std::vector<cv::Point> approx;
-        // cv::approxPolyDP(contours[i], approx, 0.1 * peri, true);
-        // if (approx.size() == 3 || approx.size() == 4) {
-        //     cv::Scalar color(255);
-        //     std::vector<std::vector<cv::Point>> tmp_contours;
-        //     tmp_contours.push_back(approx);
-        //     cv::drawContours(drawing, tmp_contours, 0, color, 2);
-        // }
         ShapeInfo info;
         auto result = try_decode(contours, hier, i, &info);
         if (result >= 0) {
             if (result >= songs->size()) {
                 dbg("Invalid id", result);
             }
-            cv::Scalar color(255);
-            cv::Scalar color_approx(128);
-            std::vector<std::vector<cv::Point>> tmp_contours;
-            std::vector<std::vector<cv::Point>> tmp_contours_approx;
-            tmp_contours.push_back(info.approx);
-            int idx = i;
-            while(idx >= 0) {
-                tmp_contours.push_back(contours[idx]);
-                idx = hier[idx][2];
-            }
-            cv::drawContours(drawing, tmp_contours, 0, color, 2);
-            cv::drawContours(drawing, tmp_contours_approx, 0, color_approx, 2);
+            // cv::Scalar color(255);
+            // cv::Scalar color_approx(128);
+            // std::vector<std::vector<cv::Point>> tmp_contours;
+            // std::vector<std::vector<cv::Point>> tmp_contours_approx;
+            // tmp_contours.push_back(info.approx);
+            // int idx = i;
+            // while(idx >= 0) {
+            //     tmp_contours.push_back(contours[idx]);
+            //     idx = hier[idx][2];
+            // }
+            // cv::drawContours(drawing, tmp_contours, 0, color, 2);
+            // cv::drawContours(drawing, tmp_contours_approx, 0, color_approx, 2);
             QRSong song;
-            song.center.x = static_cast<double>(info.center.x) / frame.gFrame->cols;
-            song.center.y = static_cast<double>(info.center.y) / frame.gFrame->rows;
-            song.size = info.size / (frame.gFrame->cols * frame.gFrame->rows);
+            song.center.x = static_cast<double>(info.center.x) / image.cols;
+            song.center.y = static_cast<double>(info.center.y) / image.rows;
+            song.size = info.size / (image.cols * image.rows);
             song.active = true;
-            // std::cout << result << " "
-            //           << song.center.x << " "
-            //           << song.center.y << " "
-            //           << song.size
-            //           << frame.msec << std::endl;
             (*songs)[result] = song;
         }
     }
-
-    //cv::imshow("tmp2", thresh);
-    //cv::imshow("tmp", drawing);
-    //cv::waitKey(1);
 }
 
 int main(int argc, char** argv) {
     call_pa(Pa_Initialize);
     Mixer mixer;
     cv::VideoCapture capture(0);
-    double fps = capture.get(cv::CAP_PROP_FPS);
-    double width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
-    double height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
 
-    std::cout << fps << std::endl;
-    std::cout << width << std::endl;
-    std::cout << height << std::endl;
-
-    //cv::namedWindow("tmp");
+    cv::namedWindow("tmp");
     //cv::namedWindow("tmp2");
+    folly::ProducerConsumerQueue<cv::Mat> queue(2);
+    std::thread show_thread([&]() {
+        auto begin = std::chrono::steady_clock::now();
+        int i = 0;
+        for(;;) {
+            cv::Mat color, gray, flipped, blurred, thresh;
+            capture >> color;
+            cv::cvtColor(color, gray, CV_BGR2GRAY);
+            cv::flip(gray, flipped, 1);
+            cv::GaussianBlur(flipped, blurred, cv::Size(15, 15), 0);
+            cv::threshold(blurred, thresh, 70, 255, cv::THRESH_BINARY);
+            queue.write(thresh);
+            auto duration = std::chrono::steady_clock::now() - begin;
+            auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+            ++i;
+            //std::cout << "FPS " << (i * 1000 / msec) << std::endl;
 
-    auto begin = std::chrono::steady_clock::now();
-    for(;;) {
-        Frame frame;
-        cv::Mat gTmp, cTmp, tmp;
-        capture >> cTmp;
-        cv::cvtColor(cTmp, gTmp, CV_BGR2GRAY);
-        cv::flip(gTmp, tmp, 1);
-        //cv::equalizeHist(tmp, *frame.gFrame);
-        *frame.gFrame = std::move(tmp);
-        //cv::imshow("tmp", *frame.gFrame);
-        //cv::waitKey(1);
-        auto duration = std::chrono::steady_clock::now() - begin;
-        frame.msec = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-
-        std::vector<QRSong> songs(7);
-        find_songs(frame, &songs);
-        mixer.push_camera_state(std::move(songs));
-        // std::cout << songs.size() << std::endl;
+            std::vector<QRSong> songs(7);
+            find_songs(thresh, &songs);
+            mixer.push_camera_state(std::move(songs));
+            // std::cout << songs.size() << std::endl;
+        }
+    });
+    
+    while(true) {
+        cv::Mat image;
+        if(queue.read(image)) {
+            cv::imshow("tmp", image);
+        }
+        cv::waitKey(1);
     }
     return 0;
 }

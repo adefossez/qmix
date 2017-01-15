@@ -7,14 +7,6 @@
 
 #include <opencv2/core.hpp>
 
-struct Frame {
-    std::shared_ptr<cv::Mat> gFrame;
-    int64_t msec;
-
-    Frame() :gFrame(new cv::Mat()) {}
-};
-
-
 struct QRSong {
     double delay {0};
     double volume {0};
