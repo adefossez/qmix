@@ -23,11 +23,7 @@ mixer.o: mixer.cpp qmix.hpp utils.hpp mixer.hpp
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(PY_CFLAGS) -c -o $@ $<
 
-libsoundfile.a:
-	cd soundfile-2.2 && $(MAKE) library
-	cp soundfile-2.2/lib/libsoundfile.a ./
-
-.PHONY: clean armadillo
+.PHONY: clean
 
 clean:
 	rm *.o

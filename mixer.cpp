@@ -20,7 +20,7 @@ const double Seeker::SPEED_PROBA = 0.01;
 const double MAX_SIZE = 0.0005;
 const double MIN_SIZE = 0.000138;
 const double MAX_SPEED = 3;
-const double KERNEL_WINDOW = 10;
+const double KERNEL_WINDOW = 3;
 
 double volume_for_size(double size) {
     size = std::max(std::min(size, MAX_SIZE), MIN_SIZE);
@@ -46,7 +46,7 @@ inline double sinc(double x) {
     if (x == 0) {
         return 1;
     } else {
-        return std::sin(M_PI * x) / M_PI * x;
+        return std::sin(M_PI * x) / (M_PI * x);
     }
 }
 
@@ -59,9 +59,10 @@ float inline interpolate(std::vector<float>& samples, double location) {
     size = samples.size();
     a = std::floor(location);
     double result = 0;
-    for(int i=-KERNEL_WINDOW + 1; i <= a; ++i) {
+    for(int i=-KERNEL_WINDOW + 1; i <= KERNEL_WINDOW; ++i) {
+        double delta = location - a + i;
         size_t idx = positive_modulo(a + i, size);
-        result += samples[idx] * lanczos(i, KERNEL_WINDOW);
+        result += samples[idx] * lanczos(delta, KERNEL_WINDOW);
     }
     //return samples[a];// * (1 - w) + samples[b] * w;
     return result;
@@ -113,8 +114,8 @@ void Seeker::get_samples(
     for (size_t index=0; index < n_samples; ++index) {
         for (int channel=0; channel < channels_; ++channel) {
             //*it = song_[channel][position_];
-            //*it = interpolate(song_[channel], position_);
-            *it = song_[channel][std::floor(position_)];
+            *it = interpolate(song_[channel], position_);
+            //*it = song_[channel][std::floor(position_)];
             //*it = std::sin(440 * position_ * 2 * M_PI);
             it++;
         }
@@ -135,6 +136,7 @@ Mixer::Mixer()
 : to_cb_(QUEUE_SIZE)
 , from_cb_(QUEUE_SIZE)
 , from_camera_(QUEUE_SIZE) {
+    dbg(lanczos(0, KERNEL_WINDOW), lanczos(-1, KERNEL_WINDOW), lanczos(-2, KERNEL_WINDOW));
     for (int i=0; i < NUM_SONGS; ++i) {
         std::string filename = "songs/" + std::to_string(i) + ".wav";
         files_.emplace_back(filename);
