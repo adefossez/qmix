@@ -220,7 +220,12 @@ void Mixer::soundio_callback(
         SoundIoOutStream* stream,
         int frame_count_min,
         int frame_count_max) {
-    assert(FBP>= frame_count_min && FBP <= frame_count_max);
+    if (FBP < frame_count_min || FBP > frame_count_max) {
+        print(
+            "Replace the value of FBP by something between", 
+            frame_count_min, frame_count_max);
+        assert(false);
+    }
     SoundIoChannelArea *areas;
     int frame_count = FBP;
     call_sio(soundio_outstream_begin_write, stream, &areas, &frame_count);
