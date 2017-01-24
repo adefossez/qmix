@@ -9,6 +9,8 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <folly/ScopeGuard.h>
+
 #include <portaudio.h>
 
 #include "mixer.hpp"
@@ -124,8 +126,24 @@ void find_songs(const cv::Mat& image, std::vector<QRSong>* songs) {
 }
 
 int main(int argc, char** argv) {
-    call_pa(Pa_Initialize);
-    Mixer mixer;
+    SoundIo *soundio = soundio_create();
+    assert(soundio);
+    auto guard = folly::makeGuard([&](){
+        soundio_destroy(soundio);
+    });
+    call_sio(soundio_connect, soundio);
+    soundio_flush_events(soundio);
+    int default_device = soundio_default_output_device_index(soundio);
+    if (default_device < 0) {
+        std::cerr << "No audio device found" << std::endl;
+        return 1;
+    }
+    SoundIoDevice* device = soundio_get_output_device(soundio, default_device);
+    assert(device);
+    auto device_guard = folly::makeGuard([&](){
+        soundio_device_unref(device);
+    });
+    Mixer mixer(device);
     cv::VideoCapture capture(0);
 
     cv::namedWindow("tmp");
@@ -140,7 +158,7 @@ int main(int argc, char** argv) {
             cv::cvtColor(color, gray, CV_BGR2GRAY);
             cv::flip(gray, flipped, 1);
             cv::GaussianBlur(flipped, blurred, cv::Size(15, 15), 0);
-            cv::threshold(blurred, thresh, 70, 255, cv::THRESH_BINARY);
+            cv::threshold(blurred, thresh, 100, 255, cv::THRESH_BINARY);
             queue.write(thresh);
             auto duration = std::chrono::steady_clock::now() - begin;
             auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
@@ -159,6 +177,7 @@ int main(int argc, char** argv) {
         if(queue.read(image)) {
             cv::imshow("tmp", image);
         }
+        soundio_flush_events(soundio);
         cv::waitKey(1);
     }
     return 0;

@@ -9,7 +9,7 @@
 #include <folly/ProducerConsumerQueue.h>
 
 #include <sndfile.hh>
-#include <portaudio.h>
+#include <soundio/soundio.h>
 
 #include "qmix.hpp"
 
@@ -45,27 +45,22 @@ private:
 
 class Mixer {
 public:
-    Mixer();
+    Mixer(SoundIoDevice* device);
     virtual ~Mixer();
     void push_camera_state(std::vector<QRSong>&& songs);
 
 private:
     void do_mixer_thread();
-    static int pa_static_callback(
-        const void* input_buffer,
-        void* output_buffer,
-        unsigned long framesPerBuffer,
-        const PaStreamCallbackTimeInfo* timeInfo,
-        PaStreamCallbackFlags statusFlags,
-        void* user_data);
-    int pa_callback(
-        const void* input_buffer,
-        void* output_buffer,
-        unsigned long framesPerBuffer,
-        const PaStreamCallbackTimeInfo* timeInfo,
-        PaStreamCallbackFlags statusFlags);
+    static void static_soundio_callback(
+        SoundIoOutStream* stream,
+        int frame_count_min,
+        int frame_count_max);
+    void soundio_callback(
+        SoundIoOutStream* stream,
+        int frame_count_min,
+        int frame_count_max);
 
-    PaStream* stream_;
+    SoundIoOutStream* stream_;
     folly::ProducerConsumerQueue<std::vector<float>> to_cb_;
     folly::ProducerConsumerQueue<std::vector<float>> from_cb_;
     folly::ProducerConsumerQueue<std::vector<QRSong>> from_camera_;

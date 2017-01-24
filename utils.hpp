@@ -2,9 +2,10 @@
 #define _UTILS_HPP_
 
 #include <iostream>
+#include <cmath>
 #include <stdexcept>
 
-#include <portaudio.h>
+#include <soundio/soundio.h>
 
 template <typename T, typename U = T> 
 typename std::common_type<T, U>::type positive_modulo(const T& dividend, 
@@ -49,12 +50,12 @@ void dbg(Args... args) {}
 #endif
 
 template<typename F, typename... Args>
-void call_pa(F f, Args&&... args) {
-    PaError error = f(std::forward<Args>(args)...);
-    if (error != paNoError) {
-        const char* text = Pa_GetErrorText(error);
+void call_sio(F f, Args&&... args) {
+    int error = f(std::forward<Args>(args)...);
+    if (error != 0) {
+        const char* text = soundio_strerror(error);
         throw std::runtime_error(
-          "PaError " + std::to_string(error) + " " + text);
+          "Soundio error " + std::to_string(error) + " " + text);
     }
 }
 
