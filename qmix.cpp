@@ -133,13 +133,27 @@ int main(int argc, char** argv) {
     });
     call_sio(soundio_connect, soundio);
     soundio_flush_events(soundio);
-    int default_device = soundio_default_output_device_index(soundio);
-    if (default_device < 0) {
-        std::cerr << "No audio device found" << std::endl;
+    auto n_devices = soundio_output_device_count(soundio);
+    SoundIoDevice* device = nullptr;
+    int device_idx_config = argc >= 2 ? std::stoi(argv[1]) : soundio_default_output_device_index(soundio);
+    for (int device_idx=0; device_idx < n_devices; ++device_idx) {
+        SoundIoDevice* tmp_device;
+        tmp_device = soundio_get_output_device(soundio, device_idx);
+        assert(tmp_device);
+        std::cout << "Device " << device_idx << " : " << device;
+        if (device_idx == device_idx_config) {
+            device = tmp_device;
+            std::cout << " [selected]";
+        } else {
+            soundio_device_unref(tmp_device);
+        }
+        std::cout << std::endl;
+    }
+    if (device == nullptr) {
+        std::cerr << "Invalid device idx" << std::endl;
         return 1;
     }
-    SoundIoDevice* device = soundio_get_output_device(soundio, default_device);
-    assert(device);
+    
     auto device_guard = folly::makeGuard([&](){
         soundio_device_unref(device);
     });
