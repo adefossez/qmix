@@ -67,6 +67,8 @@ private:
     std::vector<Seeker> files_;
     std::thread mixer_thread_;
 
+    std::atomic<bool> stop_{false};
+
     static const int FBP;
     static const int SAMPLE_RATE;
     static const int CHANNELS;

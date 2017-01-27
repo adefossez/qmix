@@ -5,13 +5,14 @@ CFLAGS=-march=native
 ifeq ($(DEBUG),true)
 	CFLAGS+= -DDEBUG -O0 -g
 else
-	CFLAGS += -O3 -ffast-math
+	CFLAGS += -O3 -ffast-math -g
 endif
 CC=clang
 CXX=clang++
 CXXFLAGS= $(CFLAGS) -Wall -std=c++11 -I/usr/local/opt/opencv3/include -I/usr/local/include
 LDFLAGS= -L/usr/local/lib -L/usr/local/opt/opencv3/lib
 LDLIBS= -lopencv_videoio -lopencv_highgui -lopencv_core -lopencv_imgproc -lsoundio -lfolly -lsndfile
+LDLIBS+= -lsfml-window -lsfml-graphics -lsfml-system
 
 qmix: qmix.o mixer.o
 	$(CXX) $(LDFLAGS) $(LDLIBS) -o $@ $< mixer.o

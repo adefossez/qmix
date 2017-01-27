@@ -163,6 +163,8 @@ Mixer::Mixer(SoundIoDevice* device)
 }
 
 Mixer::~Mixer() {
+    stop_ = true;
+    mixer_thread_.join();
     soundio_outstream_destroy(stream_);
 }
 
@@ -172,7 +174,7 @@ void Mixer::do_mixer_thread() {
     std::vector<float> tmp_buffer;
     tmp_buffer.resize(FBP * CHANNELS);
     dbg("Mixer thread starting");
-    while(true) {
+    while(!stop_) {
         from_camera_.read(state);
         std::vector<float> buffer;
         from_cb_.read(buffer);
@@ -200,6 +202,7 @@ void Mixer::do_mixer_thread() {
         while(to_cb_.isFull());
         to_cb_.write(std::move(buffer));
     }
+    dbg("Mixer thread done");
 }
 
 void Mixer::push_camera_state(std::vector<QRSong>&& songs) {
