@@ -7,7 +7,7 @@
 
 #include "utils.hpp"
 
-const int Mixer::FBP = 512;
+const int Mixer::FBP = 128;
 const int Mixer::SAMPLE_RATE = 44100;
 const int Mixer::CHANNELS = 2;
 const int Mixer::QUEUE_SIZE = 20;
@@ -132,7 +132,7 @@ const SndfileHandle& Seeker::file() const {
     return file_;
 }
 
-Mixer::Mixer(SoundIoDevice* device) 
+Mixer::Mixer() 
 : to_cb_(QUEUE_SIZE)
 , from_cb_(QUEUE_SIZE)
 , from_camera_(QUEUE_SIZE) {
@@ -144,31 +144,24 @@ Mixer::Mixer(SoundIoDevice* device)
         assert(files_[i].file().samplerate() == SAMPLE_RATE);
 
     }
-    stream_ = soundio_outstream_create(device);
-    assert(stream_);
-    stream_->format = SoundIoFormatFloat32NE;
-    stream_->userdata = static_cast<void*>(this);
-    stream_->write_callback = &Mixer::static_soundio_callback;
-    stream_->sample_rate = SAMPLE_RATE;
-
-    call_sio(soundio_outstream_open, stream_);
-    assert(!stream_->layout_error);
-    assert(stream_->layout.channel_count == CHANNELS);
-
+    call_pa(
+        Pa_OpenDefaultStream, &stream_, 0, CHANNELS, 
+        paFloat32, SAMPLE_RATE, FBP, pa_static_callback, static_cast<void*>(this));
     mixer_thread_ = std::thread([this](){
         do_mixer_thread();
     });
-
-    call_sio(soundio_outstream_start, stream_);
 }
 
 Mixer::~Mixer() {
     stop_ = true;
     mixer_thread_.join();
-    soundio_outstream_destroy(stream_);
+    call_pa(Pa_StopStream, stream_);
+    call_pa(Pa_CloseStream, stream_);
+    call_pa(Pa_Terminate);
 }
 
 void Mixer::do_mixer_thread() {
+    call_pa(Pa_StartStream, stream_);
     std::vector<QRSong> state(7);
 
     std::vector<float> tmp_buffer;
@@ -211,47 +204,45 @@ void Mixer::push_camera_state(std::vector<QRSong>&& songs) {
     }
 }
 
-void Mixer::static_soundio_callback(
-        SoundIoOutStream* stream,
-        int frame_count_min,
-        int frame_count_max) {
-    auto me = static_cast<Mixer*>(stream->userdata);
-    return me->soundio_callback(stream, frame_count_min, frame_count_max);
+int Mixer::pa_static_callback(
+        const void* input_buffer,
+        void* output_buffer,
+        unsigned long framesPerBuffer,
+        const PaStreamCallbackTimeInfo* timeInfo,
+        PaStreamCallbackFlags statusFlags,
+        void* user_data) {
+    auto me = static_cast<Mixer*>(user_data);
+    return me->pa_callback(
+        input_buffer,
+        output_buffer,
+        framesPerBuffer,
+        timeInfo,
+        statusFlags);
 }
 
-void Mixer::soundio_callback(
-        SoundIoOutStream* stream,
-        int frame_count_min,
-        int frame_count_max) {
-    if (FBP < frame_count_min || FBP > frame_count_max) {
-        print(
-            "Replace the value of FBP by something between", 
-            frame_count_min, frame_count_max);
-        assert(false);
+int Mixer::pa_callback(
+        const void* input_buffer,
+        void* output_buffer,
+        unsigned long framesPerBuffer,
+        const PaStreamCallbackTimeInfo* timeInfo,
+        PaStreamCallbackFlags statusFlags) {
+    float* buffer = static_cast<float*>(output_buffer);
+    assert(framesPerBuffer == FBP);
+    if (statusFlags != 0) {
+        dbg("Status flag", statusFlags);
     }
-    SoundIoChannelArea *areas;
-    int frame_count = FBP;
-    call_sio(soundio_outstream_begin_write, stream, &areas, &frame_count);
-    assert(frame_count == FBP);
+
     std::vector<float> from_mixer;
     if (to_cb_.read(from_mixer)) {
-        assert(from_mixer.size() == FBP * CHANNELS);
-        for (int frame=0; frame < frame_count; ++frame) {
-            for (int channel=0; channel < CHANNELS; ++channel) {
-                *reinterpret_cast<float*>(areas[channel].ptr) = from_mixer[frame * CHANNELS + channel];
-                areas[channel].ptr += areas[channel].step;
-            }
-        }
+        assert(from_mixer.size() == framesPerBuffer * CHANNELS);
+        std::copy(from_mixer.begin(), from_mixer.end(), buffer);
+        //std::fill(buffer, buffer + framesPerBuffer * CHANNELS, 0);
         if (!from_cb_.write(std::move(from_mixer))) {
             dbg("Failed to send buffer back");
         }
     } else {
         dbg("Filling with void");
-        for (int frame=0; frame < frame_count; ++frame) {
-            for (int channel=0; channel < CHANNELS; ++channel) {
-                *reinterpret_cast<float*>(areas[channel].ptr) = 0;
-                areas[channel].ptr += areas[channel].step;
-            }
-        }
+        std::fill(buffer, buffer + framesPerBuffer * CHANNELS, 0);
     }
+    return paContinue;
 }

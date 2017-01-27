@@ -5,7 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 
-#include <soundio/soundio.h>
+#include <portaudio.h>
 
 template <typename T, typename U = T> 
 typename std::common_type<T, U>::type positive_modulo(const T& dividend, 
@@ -50,12 +50,12 @@ void dbg(Args... args) {}
 #endif
 
 template<typename F, typename... Args>
-void call_sio(F f, Args&&... args) {
-    int error = f(std::forward<Args>(args)...);
-    if (error != 0) {
-        const char* text = soundio_strerror(error);
+void call_pa(F f, Args&&... args) {
+    PaError error = f(std::forward<Args>(args)...);
+    if (error != paNoError) {
+        const char* text = Pa_GetErrorText(error);
         throw std::runtime_error(
-          "Soundio error " + std::to_string(error) + " " + text);
+          "PaError " + std::to_string(error) + " " + text);
     }
 }
 

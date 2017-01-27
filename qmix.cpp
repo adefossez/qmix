@@ -145,38 +145,8 @@ void find_songs(const cv::Mat& image, std::vector<QRSong>* songs, cv::Mat* outIm
 }
 
 int main(int argc, char** argv) {
-    SoundIo *soundio = soundio_create();
-    assert(soundio);
-    auto guard = folly::makeGuard([&](){
-        soundio_destroy(soundio);
-    });
-    call_sio(soundio_connect, soundio);
-    soundio_flush_events(soundio);
-    auto n_devices = soundio_output_device_count(soundio);
-    SoundIoDevice* device = nullptr;
-    int device_idx_config = argc >= 2 ? std::stoi(argv[1]) : soundio_default_output_device_index(soundio);
-    for (int device_idx=0; device_idx < n_devices; ++device_idx) {
-        SoundIoDevice* tmp_device;
-        tmp_device = soundio_get_output_device(soundio, device_idx);
-        assert(tmp_device);
-        std::cout << "Device " << device_idx << " : " << tmp_device->name;
-        if (device_idx == device_idx_config) {
-            device = tmp_device;
-            std::cout << " [selected]";
-        } else {
-            soundio_device_unref(tmp_device);
-        }
-        std::cout << std::endl;
-    }
-    if (device == nullptr) {
-        std::cerr << "Invalid device idx" << std::endl;
-        return 1;
-    }
-    
-    auto device_guard = folly::makeGuard([&](){
-        soundio_device_unref(device);
-    });
-    Mixer mixer(device);
+    call_pa(Pa_Initialize);
+    Mixer mixer;
     cv::VideoCapture capture(0);
     int width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
     int height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -271,8 +241,6 @@ int main(int argc, char** argv) {
             }
             window.display();
         }
-
-        soundio_flush_events(soundio);
     }
     stop = true;
     show_thread.join();
