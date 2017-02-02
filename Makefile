@@ -11,8 +11,8 @@ CC=clang
 CXX=clang++
 CXXFLAGS= $(CFLAGS) -Wall -std=c++11 -I/usr/local/opt/opencv3/include -I/usr/local/include
 LDFLAGS= -L/usr/local/lib -L/usr/local/opt/opencv3/lib
-LDLIBS= -lopencv_videoio -lopencv_highgui -lopencv_core -lopencv_imgproc -lsoundio -lfolly -lsndfile -lportaudio
-LDLIBS+= -lsfml-window -lsfml-graphics -lsfml-system
+LDLIBS= -lopencv_videoio -lopencv_highgui -lopencv_core -lopencv_imgproc -lopencv_imgcodecs -lsoundio -lfolly -lsndfile -lportaudio
+LDLIBS+= -lsfml-window -lsfml-graphics -lsfml-system -lsfml-network
 
 qmix: qmix.o mixer.o
 	$(CXX) $(LDFLAGS) $(LDLIBS) -o $@ $< mixer.o

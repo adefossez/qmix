@@ -3,15 +3,20 @@
 #include <chrono>
 #include <memory>
 #include <iostream>
+#include <random>
 #include <string>
 
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
+#include <SFML/Network.hpp>
 
+#include <opencv2/opencv.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <folly/dynamic.h>
+#include <folly/json.h>
 #include <folly/Format.h>
 #include <folly/ScopeGuard.h>
 
@@ -37,7 +42,7 @@ struct ShapeInfo {
     ShapeInfo() : shape(Shape::OTHER), center(0, 0) {}
 };
 
-const double PERI_ALLOWANCE = 0.02;
+const double PERI_ALLOWANCE = 0.05;
 
 ShapeInfo get_shape(const std::vector<cv::Point>& contour) {
     ShapeInfo result;
@@ -144,6 +149,22 @@ void find_songs(const cv::Mat& image, std::vector<QRSong>* songs, cv::Mat* outIm
     }
 }
 
+void make_request(const folly::dynamic& state) {
+    sf::Http http;
+    http.setHost("http://localhost", 5000);
+    sf::Http::Request request("/state");
+    request.setMethod(sf::Http::Request::Post);
+    folly::dynamic body_json = folly::dynamic::object;
+    body_json["state"] = state;
+    std::string body = folly::toJson(body_json);
+    request.setBody(body);
+    sf::Http::Response response = http.sendRequest(request);
+    sf::Http::Response::Status status = response.getStatus();
+    if (status != sf::Http::Response::Ok) {
+        std::cerr << "Error in HTTP request " << status << std::endl;
+    }
+}
+
 int main(int argc, char** argv) {
     call_pa(Pa_Initialize);
     Mixer mixer;
@@ -172,10 +193,33 @@ int main(int argc, char** argv) {
     std::atomic<bool> stop(false);
     std::thread show_thread([&]() {
         //auto begin = std::chrono::steady_clock::now();
-        int i = 0;
+        folly::dynamic state = folly::dynamic::array();
+        std::vector<bool> state_bool(7, false);
+        for (int i = 0; i < 7; ++i) {
+            folly::dynamic song = folly::dynamic::object;
+            song["id"] = i;
+            song["unlocked"] = false;
+            state.push_back(song);
+        }
+        make_request(state);
+
+        auto begin = std::chrono::steady_clock::now();
+        auto picture_delay = std::chrono::milliseconds(200);
+        std::default_random_engine engine;
+        std::uniform_int_distribution<int> distro(0, 2000000);
+        int run_id = distro(engine);
+        int take_picture = 0;
+        int reference = 0;
         while(!stop) {
             cv::Mat color, gray, flipped, blurred, thresh;
             capture >> color;
+            if (take_picture && 
+                    std::chrono::steady_clock::now() > (begin + picture_delay)) {
+                auto filename = folly::sformat("out/{}_{:01d}_{:02d}.jpg", run_id, reference, take_picture);
+                cv::imwrite(filename, color);
+                --take_picture;
+                begin += picture_delay;
+            }
             cv::cvtColor(color, gray, CV_BGR2GRAY);
             cv::flip(gray, flipped, 1);
             cv::GaussianBlur(flipped, blurred, cv::Size(15, 15), 0);
@@ -183,12 +227,21 @@ int main(int argc, char** argv) {
             //queue.write(thresh);
             //auto duration = std::chrono::steady_clock::now() - begin;
             //auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-            ++i;
             //std::cout << "FPS " << (i * 1000 / msec) << std::endl;
 
             std::vector<QRSong> songs(7);
             cv::Mat drawing;
             find_songs(thresh, &songs, &drawing);
+            for (int i=0; i < songs.size(); ++i) {
+                if (songs[i].active && !state_bool[i]) {
+                    state_bool[i] = true;
+                    state[i]["unlocked"] = true;
+                    make_request(state);
+                    take_picture = 3;
+                    begin = std::chrono::steady_clock::now();
+                    reference = i;
+                }
+            }
             mixer.push_camera_state(std::move(songs));
             queue.write(std::move(drawing));
             // std::cout << songs.size() << std::endl;
